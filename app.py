@@ -1,118 +1,590 @@
-from flask import Flask, Response, request
 import requests
 from bs4 import BeautifulSoup
+from flask import Flask, render_template_string, request
 
 app = Flask(__name__)
 
-@app.route('/score')
-def score():
-    # URL for live cricket scorecard (replace with actual URL or pass via query parameter)
-    url = request.args.get('url', 'https://www.cricbuzz.com/live-cricket-scorecard/94586/indw-vs-pakw-7th-match-group-a-icc-womens-t20-world-cup-2024')
+# Function to scrape cricket data
+def scrape_cricket_data():
+    url = 'https://www.cricbuzz.com/live-cricket-scorecard/100247/ind-vs-ban-2nd-t20i-bangladesh-tour-of-india-2024'
+    response = requests.get(url)
+    soup = BeautifulSoup(response.text, 'html.parser')
 
-    headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+    def get_text_or_none(element, selector=None):
+        if element is None:
+            return "N/A"
+        if selector:
+            el = element.find(selector)
+        else:
+            el = element
+        return el.text.strip() if el else "N/A"
+
+    # First innings: Batting and Bowling
+    first_innings_batting = soup.find_all('div', class_='cb-col cb-col-100 cb-ltst-wgt-hdr')[0]  # Batting
+    first_innings_bowling = soup.find_all('div', class_='cb-col cb-col-100 cb-ltst-wgt-hdr')[1]  # Bowling
+
+    # Second innings: Batting and Bowling (if available)
+    second_innings = soup.find('div', id='innings_2')
+    second_innings_batting = second_innings.find('div', class_='cb-col cb-col-100 cb-ltst-wgt-hdr')
+    second_innings_bowling = second_innings.find_all('div', class_='cb-col cb-col-100 cb-ltst-wgt-hdr')[1]
+
+    # Extract team names and scores
+    # Extract team names and scores
+    first_innings_team = get_text_or_none(first_innings_batting.find('span')).replace('innings', '').strip()
+    first_innings_score = get_text_or_none(first_innings_batting.find('span', class_='pull-right'))
+
+    second_innings_team = get_text_or_none(second_innings_batting.find('span')).replace('innings', '').strip()
+    second_innings_score = get_text_or_none(second_innings_batting.find('span', class_='pull-right'))
+
+    # Extract player scores for first innings
+    first_innings_player_scores = []
+    players = first_innings_batting.find_all('div', class_='cb-col cb-col-100 cb-scrd-itms')
+    for player in players:
+        player_columns = player.find_all('div', class_='cb-col')
+        if len(player_columns) < 7:
+            continue
+        first_innings_player_scores.append({
+            'name': get_text_or_none(player.find('a', class_='cb-text-link')),
+            'dismissal': get_text_or_none(player.find('span', class_='text-gray')),
+            'runs': get_text_or_none(player_columns[2]),
+            'balls': get_text_or_none(player_columns[3]),
+            'fours': get_text_or_none(player_columns[4]),
+            'sixes': get_text_or_none(player_columns[5]),
+            'strike_rate': get_text_or_none(player_columns[6])
+        })
+
+    # Extract bowling data for first innings
+    first_innings_bowling_data = []
+    bowlers = first_innings_bowling.find_all('div', class_='cb-col cb-col-100 cb-scrd-itms')
+    for bowler in bowlers:
+        bowler_columns = bowler.find_all('div', class_='cb-col')
+        if len(bowler_columns) < 8:
+            continue
+        first_innings_bowling_data.append({
+            'name': get_text_or_none(bowler.find('a', class_='cb-text-link')),
+            'overs': get_text_or_none(bowler_columns[1]),
+            'maidens': get_text_or_none(bowler_columns[2]),
+            'runs': get_text_or_none(bowler_columns[3]),
+            'wickets': get_text_or_none(bowler_columns[4]),
+            'nb': get_text_or_none(bowler_columns[5]),
+            'wd': get_text_or_none(bowler_columns[6]),
+            'eco': get_text_or_none(bowler_columns[7])
+        })
+
+    # Extract player scores for second innings
+    second_innings_player_scores = []
+    second_innings_players = second_innings_batting.find_all('div', class_='cb-col cb-col-100 cb-scrd-itms')
+    for player in second_innings_players:
+        player_columns = player.find_all('div', class_='cb-col')
+        if len(player_columns) < 7:
+            continue
+        second_innings_player_scores.append({
+            'name': get_text_or_none(player.find('a', class_='cb-text-link')),
+            'dismissal': get_text_or_none(player.find('span', class_='text-gray')),
+            'runs': get_text_or_none(player_columns[2]),
+            'balls': get_text_or_none(player_columns[3]),
+            'fours': get_text_or_none(player_columns[4]),
+            'sixes': get_text_or_none(player_columns[5]),
+            'strike_rate': get_text_or_none(player_columns[6])
+        })
+
+    # Extract bowling data for second innings
+    second_innings_bowling_data = []
+    second_innings_bowlers = second_innings_bowling.find_all('div', class_='cb-col cb-col-100 cb-scrd-itms')
+    for bowler in second_innings_bowlers:
+        bowler_columns = bowler.find_all('div', class_='cb-col')
+        if len(bowler_columns) < 8:
+            continue
+        second_innings_bowling_data.append({
+            'name': get_text_or_none(bowler.find('a', class_='cb-text-link')),
+            'overs': get_text_or_none(bowler_columns[1]),
+            'maidens': get_text_or_none(bowler_columns[2]),
+            'runs': get_text_or_none(bowler_columns[3]),
+            'wickets': get_text_or_none(bowler_columns[4]),
+            'nb': get_text_or_none(bowler_columns[5]),
+            'wd': get_text_or_none(bowler_columns[6]),
+            'eco': get_text_or_none(bowler_columns[7])
+        })
+
+    # Extract fall of wickets for both innings
+    first_innings_fall_of_wickets = get_text_or_none(soup.find('div', class_='cb-col cb-col-100 cb-col-rt cb-font-13'))
+    second_innings_fall_of_wickets = get_text_or_none(second_innings.find('div', class_='cb-col cb-col-100 cb-col-rt cb-font-13'))
+
+    return {
+        'first_innings_team': first_innings_team,
+        'first_innings_score': first_innings_score,
+        'first_innings_player_scores': first_innings_player_scores,
+        'first_innings_fall_of_wickets': first_innings_fall_of_wickets,
+        'first_innings_bowling_data': first_innings_bowling_data,
+        'second_innings_team': second_innings_team,
+        'second_innings_score': second_innings_score,
+        'second_innings_player_scores': second_innings_player_scores,
+        'second_innings_fall_of_wickets': second_innings_fall_of_wickets,
+        'second_innings_bowling_data': second_innings_bowling_data
     }
 
-    try:
-        response = requests.get(url, headers=headers)
-        response.raise_for_status()
-        soup = BeautifulSoup(response.content, 'html.parser')
+# Flask route to display paginated scorecard pages
+@app.route('/')
+def home():
+    # Get the current page from query parameters, default to 1
+    page = int(request.args.get('page', 1))
 
-        # Extract team name
-        team_name_tag = soup.find('div', class_='cb-col cb-col-100 cb-scrd-hdr-rw')
-        if team_name_tag:
-            # Remove "Innings" and clean team name
-            team_name = team_name_tag.text.strip().replace("Innings", "").strip()
-            
-            # Extract current score
-            current_score_tag = team_name_tag.find_next('div', class_='cb-col cb-col-8 text-right text-bold')
-            if current_score_tag:
-                # Remove the "R" at the end of the score if it's there
-                current_score = current_score_tag.text.strip().replace('R', '').strip()
-            else:
-                return "Error: Could not fetch score"
-        else:
-            return "Error: Could not fetch team name"
+    # Scrape the data
+    data = scrape_cricket_data()
 
-        # Combine team name and score to display
-        total_score = f"{team_name}: {current_score}"
+    # HTML template for displaying the data
+    html_template = """
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cricket Scorecard - Enhanced Visuals</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;600&family=Roboto+Slab:wght@400;700&display=swap');
+        
+        /* Background Animation */
+        @keyframes bgAnimation {
+            0% { background-color: #0B192C; }
+            25% { background-color: #1E3E62; }
+            50% { background-color: #0B192C; }
+            75% { background-color: #FF6500; }
+            100% { background-color: #1E3E62; }
+        }
 
-        # Creating HTML response for batters and bowlers
-        score_data = f'''
-        <style>
-            table {{ width: 80%; margin: auto; border-collapse: collapse; color: black; }}
-            th, td {{ padding: 10px; text-align: center; border: 1px solid white; }}
-            th {{ background-color: #ff6600; }}
-            .total-score {{ font-size: 30px; font-weight: bold; text-align: center; margin-bottom: 20px; }}
-        </style>
-        <div class="total-score">{total_score}</div>
-        <table>
-            <tr><th>Batter</th><th>Dismissal</th><th>Runs</th><th>Balls</th><th>4s</th><th>6s</th><th>Strike Rate</th></tr>
-        '''
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: 'Poppins', sans-serif;
+            color: #dcdcdc;
+            width: 90%;
+            margin: auto;
+            transition: all 0.5s ease;
+            overflow-x: hidden;
+            background-color: #0B192C;
+            animation: bgAnimation 15s infinite alternate ease-in-out;
+        }
 
-        # Parse batter data
-        batters_table = soup.find_all('div', class_='cb-col cb-col-100 cb-ltst-wgt-hdr')[0]  # Adjust the index if necessary
-        players = batters_table.find_all('div', class_='cb-col cb-col-100 cb-scrd-itms')
-        for player in players:
-            batter_name_tag = player.find('a', class_='cb-text-link')
-            dismissal_tag = player.find('span', class_='text-gray')
+        .team-score-wrapper {
+            position: fixed;
+            top: 0;
+            left: 103px;
+            width: 88%;
+            background-color: #0b182b;
+            height: 30px;
+            z-index: 999;
+            margin: auto;
+            opacity: 0;
+            animation: fadeInTeamScore 2s ease 1s forwards;
+        }
 
-            if batter_name_tag:
-                batter_name = batter_name_tag.text.strip()
-                dismissal_info = dismissal_tag.text.strip() if dismissal_tag else 'Not Out'
-                details = player.find_all('div', class_='cb-col')
+        @keyframes fadeInTeamScore {
+            0% { opacity: 0; transform: translateY(-20px); }
+            100% { opacity: 1; transform: translateY(0); }
+        }
 
-                if len(details) >= 5:
-                    runs = details[2].text.strip() if details[2] else 'N/A'
-                    balls = details[3].text.strip() if details[3] else 'N/A'
-                    fours = details[4].text.strip() if details[4] else 'N/A'
-                    sixes = details[5].text.strip() if details[5] else 'N/A'
-                    strike_rate = details[6].text.strip() if details[6] else 'N/A'
-                    score_data += f'<tr><td>{batter_name}</td><td>{dismissal_info}</td><td>{runs}</td><td>{balls}</td><td>{fours}</td><td>{sixes}</td><td>{strike_rate}</td></tr>'
+        .team-score {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            width: 100%;
+            max-width: 1200px;
+            padding: 25px;
+            background: linear-gradient(135deg, #FF6500, #1E3E62);
+            border-radius: 10px;
+            margin-bottom: 20px;
+            box-shadow: 0 8px 20px rgba(0, 0, 0, 0.8);
+            color: #fff;
+            position: sticky;
+            top: 30px;
+            z-index: 1000;
+            overflow: hidden;
+            font-family: 'Roboto Slab', serif;
+            animation: fadeInScore 2s ease;
+        }
 
-        score_data += '</table>'
+        @keyframes fadeInScore {
+            0% { opacity: 0; transform: translateY(-30px); }
+            100% { opacity: 1; transform: translateY(0); }
+        }
 
-        # Parse and display Fall of Wickets
-        fall_of_wickets_section = soup.find('div', text='Fall of Wickets')
-        if fall_of_wickets_section:
-            fall_of_wickets_data = fall_of_wickets_section.find_next('div').text.strip()
-            score_data += f'''
-            <h3 style="text-align:center;">Fall of Wickets</h3>
-            <p style="text-align:center;">{fall_of_wickets_data.replace(",", ", ")}</p>
-            '''
+        .team-name {
+            font-size: 60px;
+            font-weight: 700;
+            letter-spacing: 3px;
+            font-style: italic;
+            text-transform: uppercase;
+            color: #FFF;
+            text-shadow: 0 4px 8px rgba(255, 101, 0, 0.7);
+        }
 
-        # Creating HTML for bowlers
-        bowlers_table = soup.find_all('div', class_='cb-col cb-col-100 cb-ltst-wgt-hdr')[1]  # Adjust the index if necessary
-        score_data += '''
-        <h3 style="text-align:center;">Bowlers</h3>
-        <table>
-            <tr><th>Bowler</th><th>Overs</th><th>Maidens</th><th>Runs</th><th>Wickets</th><th>No Balls</th><th>Wides</th><th>Economy</th></tr>
-        '''
+        .score {
+            font-size: 56px;
+            font-weight: bold;
+            font-style: italic;
+            text-align: right;
+            color: #FFF;
+            text-shadow: 0 4px 8px rgba(30, 62, 98, 0.7);
+        }
 
-        bowlers = bowlers_table.find_all('div', class_='cb-col cb-col-100 cb-scrd-itms')
-        for bowler in bowlers:
-            bowler_name_tag = bowler.find('a', class_='cb-text-link')
+        .container {
+            padding-top: 60px;
+            padding: 20px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            flex-direction: column;
+            width: 100%;
+            background-color: rgba(11, 25, 44, 0.95);
+            border-radius: 15px;
+            box-shadow: 0 15px 40px rgba(0, 0, 0, 0.6);
+            position: relative;
+            z-index: 1;
+            animation: fadeIn 2s ease-in-out;
+        }
 
-            if bowler_name_tag:
-                bowler_name = bowler_name_tag.text.strip()
-                details = bowler.find_all('div', class_='cb-col')
+        .player-scores, .fall-of-wickets, .bowling-scores {
+            width: 100%;
+            max-width: 1200px;
+            margin-top: 12px;
+            margin-bottom: 20px;
+            background-color: rgba(30, 62, 98, 0.95);
+            border-radius: 10px;
+            padding: 20px;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.5);
+            border: 1px solid rgba(255, 101, 0, 0.4);
+            opacity: 0.9; /* Added opacity */
+            animation: fadeInSection 2s ease-in-out; /* Smooth fade-in for sections */
+        }
 
-                if len(details) >= 7:
-                    overs = details[1].text.strip() if details[1] else 'N/A'
-                    maidens = details[2].text.strip() if details[2] else 'N/A'
-                    runs_conceded = details[3].text.strip() if details[3] else 'N/A'
-                    wickets = details[4].text.strip() if details[4] else 'N/A'
-                    no_balls = details[5].text.strip() if details[5] else 'N/A'
-                    wides = details[6].text.strip() if details[6] else 'N/A'
-                    economy = details[7].text.strip() if details[7] else 'N/A'
-                    score_data += f'<tr><td>{bowler_name}</td><td>{overs}</td><td>{maidens}</td><td>{runs_conceded}</td><td>{wickets}</td><td>{no_balls}</td><td>{wides}</td><td>{economy}</td></tr>'
+        @keyframes fadeInSection {
+            0% { opacity: 0; transform: translateY(20px); }
+            100% { opacity: 1; transform: translateY(0); }
+        }
 
-        score_data += '</table>'
+        /* Table */
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            background-color: rgba(51, 51, 51, 0.9);
+            border-radius: 10px;
+            overflow: hidden;
+            box-shadow: 0 6px 15px rgba(0, 0, 0, 0.5);
+        }
 
-        return Response(score_data, mimetype='text/html')
+        th, td {
+            padding: 20px;
+            text-align: center;
+            border-bottom: 1px solid #555;
+            font-size: 22px;
+            color: #f0f0f0;
+            transition: transform 0.3s ease;
+            font-family: 'Poppins', sans-serif;
+            cursor: pointer;
+        }
 
-    except requests.exceptions.RequestException as e:
-        return f"Error fetching scorecard: {e}"
+        th {
+            background-color: rgba(68, 68, 68, 0.8);
+            color: #ffd700;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.5);
+        }
+
+        td:hover {
+            transform: scale(1.05);
+            background-color: rgba(85, 85, 85, 0.9);
+            box-shadow: 0 0 15px rgba(255, 215, 0, 0.5);
+        }
+
+        /* Subheader Styling (Same as Fall of Wickets) */
+        h3 {
+            color: #ffb400;
+            font-size: 28px;
+            font-weight: bold;
+            text-transform: uppercase;
+            letter-spacing: 1.5px;
+            text-align: center;
+            text-shadow: 3px 3px 6px rgba(0, 0, 0, 0.7);
+            margin-bottom: 10px;
+            margin-top: -12px;
+        }
+
+        .fall-of-wickets-content {
+            margin-top: 20px;
+            padding: 15px;
+            border-radius: 10px;
+            background-color: rgba(51, 51, 51, 0.95);
+            color: #ffd700;
+            font-size: 24px;
+            text-align: center;
+            max-width: 1200px;
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.5);
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.5);
+        }
+
+        .fall-of-wickets-content h3 {
+            color: #ffb400;
+            font-size: 28px;
+            font-weight: bold;
+            text-transform: uppercase;
+            letter-spacing: 1.5px;
+            text-shadow: 3px 3px 6px rgba(0, 0, 0, 0.7);
+            margin-bottom: 15px;
+        }
+
+        /* Player Modal Styling */
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 1001;
+            left: 50%;
+            top: 50%;
+            transform: translate(-50%, -50%);
+            background-color: rgba(30, 62, 98, 0.95);
+            border-radius: 15px;
+            width: 50%;
+            max-width: 600px;
+            padding: 30px;
+            box-shadow: 0 15px 30px rgba(0, 0, 0, 0.5);
+        }
+
+        .modal-content {
+            color: #fff;
+            font-size: 22px;
+            text-align: center;
+        }
+
+        .modal-header {
+            font-size: 28px;
+            font-weight: bold;
+            margin-bottom: 20px;
+        }
+
+        .modal-close {
+            position: absolute;
+            top: 15px;
+            right: 20px;
+            font-size: 24px;
+            cursor: pointer;
+            color: #ffd700;
+        }
+    </style>
+    <script>
+        // Modal handling
+        function showPlayerDetails(playerName, dismissal, runs, balls, fours, sixes, strikeRate) {
+            const modal = document.getElementById('playerModal');
+            const modalContent = document.getElementById('modalContent');
+            modal.style.display = 'block';
+            modalContent.innerHTML = `
+                <div class="modal-header">${playerName}</div>
+                <div>Dismissal: ${dismissal}</div>
+                <div>Runs: ${runs}</div>
+                <div>Balls: ${balls}</div>
+                <div>Fours: ${fours}</div>
+                <div>Sixes: ${sixes}</div>
+                <div>Strike Rate: ${strikeRate}</div>
+            `;
+        }
+
+        function closeModal() {
+            const modal = document.getElementById('playerModal');
+            modal.style.display = 'none';
+        }
+
+        // Arrow key navigation
+        document.addEventListener('DOMContentLoaded', function () {
+            document.addEventListener('keydown', function (event) {
+                let currentPage = {{ page }};
+                if (event.key === 'ArrowRight') {
+                    let nextPage = currentPage < 4 ? currentPage + 1 : 1;
+                    window.location.href = `/?page=${nextPage}`;
+                } else if (event.key === 'ArrowLeft') {
+                    let previousPage = currentPage > 1 ? currentPage - 1 : 4;
+                    window.location.href = `/?page=${previousPage}`;
+                }
+            });
+        });
+    </script>
+</head>
+<body>
+    <div class="team-score-wrapper"></div> <!-- Fixed padding to fill the gap -->
+    <div class="container">
+        {% if page == 1 %}
+        <div class="team-score">
+            <div class="team-name">{{ first_innings_team.replace('Innings', '').strip() }}</div>
+            <div class="score">{{ first_innings_score }}</div>
+        </div>
+        <div class="player-scores">
+            <h3>Batting</h3>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Player</th>
+                        <th>Dismissal</th>
+                        <th class="highlight">R</th>
+                        <th>B</th>
+                        <th>4s</th>
+                        <th>6s</th>
+                        <th>SR</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for player in first_innings_player_scores %}
+                    <tr onclick="showPlayerDetails('{{ player.name }}', '{{ player.dismissal }}', '{{ player.runs }}', '{{ player.balls }}', '{{ player.fours }}', '{{ player.sixes }}', '{{ player.strike_rate }}')">
+                        <td>{{ player.name }}</td>
+                        <td>{{ player.dismissal }}</td>
+                        <td class="highlight">{{ player.runs }}</td>
+                        <td>{{ player.balls }}</td>
+                        <td>{{ player.fours }}</td>
+                        <td>{{ player.sixes }}</td>
+                        <td>{{ player.strike_rate }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        <div class="fall-of-wickets-content">
+            <h3>Fall of Wickets</h3>
+            <p>Fall of Wickets: {{ first_innings_fall_of_wickets }}</p>
+        </div>
+        {% elif page == 2 %}
+        <div class="team-score">
+            <div class="team-name">{{ first_innings_team.replace('Innings', '').strip() }}</div>
+            <div class="score">{{ first_innings_score }}</div>
+        </div>
+        <div class="bowling-scores">
+            <h3>Bowling</h3>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Bowler</th>
+                        <th>O</th>
+                        <th>M</th>
+                        <th>R</th>
+                        <th>W</th>
+                        <th>NB</th>
+                        <th>WD</th>
+                        <th>ECO</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for bowler in first_innings_bowling_data %}
+                    <tr>
+                        <td>{{ bowler.name }}</td>
+                        <td>{{ bowler.overs }}</td>
+                        <td>{{ bowler.maidens }}</td>
+                        <td>{{ bowler.runs }}</td>
+                        <td>{{ bowler.wickets }}</td>
+                        <td>{{ bowler.nb }}</td>
+                        <td>{{ bowler.wd }}</td>
+                        <td>{{ bowler.eco }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% elif page == 3 %}
+        <div class="team-score">
+            <div class="team-name">{{ second_innings_team.replace('Innings', '').strip() }}</div>
+            <div class="score">{{ second_innings_score }}</div>
+        </div>
+        <div class="player-scores">
+            <h3>Batting</h3>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Player</th>
+                        <th>Dismissal</th>
+                        <th class="highlight">R</th>
+                        <th>B</th>
+                        <th>4s</th>
+                        <th>6s</th>
+                        <th>SR</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for player in second_innings_player_scores %}
+                    <tr onclick="showPlayerDetails('{{ player.name }}', '{{ player.dismissal }}', '{{ player.runs }}', '{{ player.balls }}', '{{ player.fours }}', '{{ player.sixes }}', '{{ player.strike_rate }}')">
+                        <td>{{ player.name }}</td>
+                        <td>{{ player.dismissal }}</td>
+                        <td class="highlight">{{ player.runs }}</td>
+                        <td>{{ player.balls }}</td>
+                        <td>{{ player.fours }}</td>
+                        <td>{{ player.sixes }}</td>
+                        <td>{{ player.strike_rate }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        <div class="fall-of-wickets-content">
+            <h3>Fall of Wickets</h3>
+            <p>Fall of Wickets: {{ second_innings_fall_of_wickets }}</p>
+        </div>
+        {% elif page == 4 %}
+        <div class="team-score">
+            <div class="team-name">{{ second_innings_team.replace('Innings', '').strip() }}</div>
+            <div class="score">{{ second_innings_score }}</div>
+        </div>
+        <div class="bowling-scores">
+            <h3>Bowling</h3>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Bowler</th>
+                        <th>O</th>
+                        <th>M</th>
+                        <th>R</th>
+                        <th>W</th>
+                        <th>NB</th>
+                        <th>WD</th>
+                        <th>ECO</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for bowler in second_innings_bowling_data %}
+                    <tr>
+                        <td>{{ bowler.name }}</td>
+                        <td>{{ bowler.overs }}</td>
+                        <td>{{ bowler.maidens }}</td>
+                        <td>{{ bowler.runs }}</td>
+                        <td>{{ bowler.wickets }}</td>
+                        <td>{{ bowler.nb }}</td>
+                        <td>{{ bowler.wd }}</td>
+                        <td>{{ bowler.eco }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% endif %}
+    </div>
+
+    <!-- Modal for Player Details -->
+    <div id="playerModal" class="modal">
+        <span class="modal-close" onclick="closeModal()">&times;</span>
+        <div id="modalContent" class="modal-content"></div>
+    </div>
+</body>
+</html>
+ """
+
+    return render_template_string(
+        html_template,
+        page=page,
+        first_innings_team=data['first_innings_team'],
+        first_innings_score=data['first_innings_score'],
+        first_innings_player_scores=data['first_innings_player_scores'],
+        first_innings_fall_of_wickets=data['first_innings_fall_of_wickets'],
+        first_innings_bowling_data=data['first_innings_bowling_data'],
+        second_innings_team=data['second_innings_team'],
+        second_innings_score=data['second_innings_score'],
+        second_innings_player_scores=data['second_innings_player_scores'],
+        second_innings_fall_of_wickets=data['second_innings_fall_of_wickets'],
+        second_innings_bowling_data=data['second_innings_bowling_data']
+    )
 
 if __name__ == '__main__':
     app.run(debug=True)
