@@ -6,8 +6,15 @@ app = Flask(__name__)
 
 # Function to scrape cricket data
 def scrape_cricket_data():
-    url = 'https://www.cricbuzz.com/live-cricket-scorecard/100247/ind-vs-ban-2nd-t20i-bangladesh-tour-of-india-2024'
-    response = requests.get(url)
+    url = 'https://www.cricbuzz.com/live-cricket-scorecard/97212/hyd-vs-guj-elite-group-b-ranji-trophy-elite-2024-25'
+    
+    # Handle network errors
+    try:
+        response = requests.get(url)
+        response.raise_for_status()  # Raise an HTTPError if the response was unsuccessful
+    except requests.exceptions.RequestException as e:
+        return {'error': f"Failed to retrieve data: {e}"}
+    
     soup = BeautifulSoup(response.text, 'html.parser')
 
     def get_text_or_none(element, selector=None):
@@ -20,21 +27,29 @@ def scrape_cricket_data():
         return el.text.strip() if el else "N/A"
 
     # First innings: Batting and Bowling
-    first_innings_batting = soup.find_all('div', class_='cb-col cb-col-100 cb-ltst-wgt-hdr')[0]  # Batting
-    first_innings_bowling = soup.find_all('div', class_='cb-col cb-col-100 cb-ltst-wgt-hdr')[1]  # Bowling
+    innings_data = soup.find_all('div', class_='cb-col cb-col-100 cb-ltst-wgt-hdr')
+    
+    if len(innings_data) < 2:
+        return {'error': 'Incomplete innings data'}
+    
+    first_innings_batting = innings_data[0]  # Batting
+    first_innings_bowling = innings_data[1]  # Bowling
 
     # Second innings: Batting and Bowling (if available)
     second_innings = soup.find('div', id='innings_2')
-    second_innings_batting = second_innings.find('div', class_='cb-col cb-col-100 cb-ltst-wgt-hdr')
-    second_innings_bowling = second_innings.find_all('div', class_='cb-col cb-col-100 cb-ltst-wgt-hdr')[1]
+    
+    if second_innings:
+        second_innings_batting = second_innings.find('div', class_='cb-col cb-col-100 cb-ltst-wgt-hdr')
+        second_innings_bowling = second_innings.find_all('div', class_='cb-col cb-col-100 cb-ltst-wgt-hdr')[1]
+    else:
+        second_innings_batting, second_innings_bowling = None, None
 
     # Extract team names and scores
-    # Extract team names and scores
-    first_innings_team = get_text_or_none(first_innings_batting.find('span')).replace('innings', '').strip()
+    first_innings_team = get_text_or_none(first_innings_batting.find('span'))
     first_innings_score = get_text_or_none(first_innings_batting.find('span', class_='pull-right'))
 
-    second_innings_team = get_text_or_none(second_innings_batting.find('span')).replace('innings', '').strip()
-    second_innings_score = get_text_or_none(second_innings_batting.find('span', class_='pull-right'))
+    second_innings_team = get_text_or_none(second_innings_batting.find('span')) if second_innings_batting else "N/A"
+    second_innings_score = get_text_or_none(second_innings_batting.find('span', class_='pull-right')) if second_innings_batting else "N/A"
 
     # Extract player scores for first innings
     first_innings_player_scores = []
@@ -73,42 +88,44 @@ def scrape_cricket_data():
 
     # Extract player scores for second innings
     second_innings_player_scores = []
-    second_innings_players = second_innings_batting.find_all('div', class_='cb-col cb-col-100 cb-scrd-itms')
-    for player in second_innings_players:
-        player_columns = player.find_all('div', class_='cb-col')
-        if len(player_columns) < 7:
-            continue
-        second_innings_player_scores.append({
-            'name': get_text_or_none(player.find('a', class_='cb-text-link')),
-            'dismissal': get_text_or_none(player.find('span', class_='text-gray')),
-            'runs': get_text_or_none(player_columns[2]),
-            'balls': get_text_or_none(player_columns[3]),
-            'fours': get_text_or_none(player_columns[4]),
-            'sixes': get_text_or_none(player_columns[5]),
-            'strike_rate': get_text_or_none(player_columns[6])
-        })
+    if second_innings_batting:
+        second_innings_players = second_innings_batting.find_all('div', class_='cb-col cb-col-100 cb-scrd-itms')
+        for player in second_innings_players:
+            player_columns = player.find_all('div', class_='cb-col')
+            if len(player_columns) < 7:
+                continue
+            second_innings_player_scores.append({
+                'name': get_text_or_none(player.find('a', class_='cb-text-link')),
+                'dismissal': get_text_or_none(player.find('span', class_='text-gray')),
+                'runs': get_text_or_none(player_columns[2]),
+                'balls': get_text_or_none(player_columns[3]),
+                'fours': get_text_or_none(player_columns[4]),
+                'sixes': get_text_or_none(player_columns[5]),
+                'strike_rate': get_text_or_none(player_columns[6])
+            })
 
     # Extract bowling data for second innings
     second_innings_bowling_data = []
-    second_innings_bowlers = second_innings_bowling.find_all('div', class_='cb-col cb-col-100 cb-scrd-itms')
-    for bowler in second_innings_bowlers:
-        bowler_columns = bowler.find_all('div', class_='cb-col')
-        if len(bowler_columns) < 8:
-            continue
-        second_innings_bowling_data.append({
-            'name': get_text_or_none(bowler.find('a', class_='cb-text-link')),
-            'overs': get_text_or_none(bowler_columns[1]),
-            'maidens': get_text_or_none(bowler_columns[2]),
-            'runs': get_text_or_none(bowler_columns[3]),
-            'wickets': get_text_or_none(bowler_columns[4]),
-            'nb': get_text_or_none(bowler_columns[5]),
-            'wd': get_text_or_none(bowler_columns[6]),
-            'eco': get_text_or_none(bowler_columns[7])
-        })
+    if second_innings_bowling:
+        second_innings_bowlers = second_innings_bowling.find_all('div', class_='cb-col cb-col-100 cb-scrd-itms')
+        for bowler in second_innings_bowlers:
+            bowler_columns = bowler.find_all('div', class_='cb-col')
+            if len(bowler_columns) < 8:
+                continue
+            second_innings_bowling_data.append({
+                'name': get_text_or_none(bowler.find('a', class_='cb-text-link')),
+                'overs': get_text_or_none(bowler_columns[1]),
+                'maidens': get_text_or_none(bowler_columns[2]),
+                'runs': get_text_or_none(bowler_columns[3]),
+                'wickets': get_text_or_none(bowler_columns[4]),
+                'nb': get_text_or_none(bowler_columns[5]),
+                'wd': get_text_or_none(bowler_columns[6]),
+                'eco': get_text_or_none(bowler_columns[7])
+            })
 
     # Extract fall of wickets for both innings
     first_innings_fall_of_wickets = get_text_or_none(soup.find('div', class_='cb-col cb-col-100 cb-col-rt cb-font-13'))
-    second_innings_fall_of_wickets = get_text_or_none(second_innings.find('div', class_='cb-col cb-col-100 cb-col-rt cb-font-13'))
+    second_innings_fall_of_wickets = get_text_or_none(second_innings.find('div', class_='cb-col cb-col-100 cb-col-rt cb-font-13')) if second_innings else "N/A"
 
     return {
         'first_innings_team': first_innings_team,
@@ -132,9 +149,12 @@ def home():
     # Scrape the data
     data = scrape_cricket_data()
 
+    # If there's an error during scraping, show the error message
+    if 'error' in data:
+        return data['error']
+
     # HTML template for displaying the data
-    html_template = """
-<!DOCTYPE html>
+    html_template = """<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -168,7 +188,7 @@ def home():
         .team-score-wrapper {
             position: fixed;
             top: 0;
-            left: 103px;
+            left: 91px;
             width: 88%;
             background-color: #0b182b;
             height: 30px;
@@ -228,14 +248,14 @@ def home():
         }
 
         .container {
-            padding-top: 60px;
-            padding: 20px;
+            padding-top: 32px;
+            padding-bottom: 25px;
             display: flex;
             justify-content: center;
             align-items: center;
             flex-direction: column;
             width: 100%;
-            background-color: rgba(11, 25, 44, 0.95);
+            background-color: rgb(12, 24, 42);
             border-radius: 15px;
             box-shadow: 0 15px 40px rgba(0, 0, 0, 0.6);
             position: relative;
@@ -569,7 +589,7 @@ def home():
     </div>
 </body>
 </html>
- """
+"""
 
     return render_template_string(
         html_template,
@@ -587,4 +607,4 @@ def home():
     )
 
 if __name__ == '__main__':
-    app.run(debug=True)
+    app.run(host='0.0.0.0', port=5000, debug=True)
